@@ -562,45 +562,49 @@ static const NSInteger kErrorMethodNotAvailableOnIOSVersion = 1005;
 }
 
 - (AVCaptureDevice *)newCaptureDeviceWithCamera:(MTBCamera)camera {
-    AVCaptureDevice *newCaptureDevice = nil;
     AVCaptureDevicePosition position = [[self class] devicePositionForCamera:camera];
-    
-    if (@available(iOS 10.0, *)) {
-        AVCaptureDevice *device = [AVCaptureDevice defaultDeviceWithDeviceType:AVCaptureDeviceTypeBuiltInWideAngleCamera
-                                                                     mediaType:AVMediaTypeVideo
-                                                                      position:position];
-        newCaptureDevice = device;
-    } else {
-        // We can ignore the deprecation here because we are using
-        // AVCaptureDeviceDiscoverySession if it is available
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-        NSArray *videoDevices = [AVCaptureDevice devicesWithMediaType:AVMediaTypeVideo];
-        for (AVCaptureDevice *device in videoDevices) {
-            if (device.position == position) {
-                newCaptureDevice = device;
-                break;
-            }
+    AVCaptureDevice *newCaptureDevice = nil;
+
+    if (@available(iOS 13.0, *)) {
+        NSArray *deviceTypes;
+        if (position == AVCaptureDevicePositionBack) {
+            deviceTypes = @[
+                AVCaptureDeviceTypeBuiltInUltraWideCamera,
+                AVCaptureDeviceTypeBuiltInWideAngleCamera
+            ];
+        } else {
+            deviceTypes = @[AVCaptureDeviceTypeBuiltInWideAngleCamera];
         }
-#pragma GCC diagnostic pop
+
+        AVCaptureDeviceDiscoverySession *session =
+            [AVCaptureDeviceDiscoverySession discoverySessionWithDeviceTypes:deviceTypes
+                                                                   mediaType:AVMediaTypeVideo
+                                                                    position:position];
+        newCaptureDevice = session.devices.firstObject;
+    } else {
+        newCaptureDevice =
+            [AVCaptureDevice defaultDeviceWithDeviceType:AVCaptureDeviceTypeBuiltInWideAngleCamera
+                                               mediaType:AVMediaTypeVideo
+                                                position:position];
     }
-    
-    // If the front camera is not available, use the back camera
+
     if (!newCaptureDevice) {
         newCaptureDevice = [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
     }
-    
-    // Using AVCaptureFocusModeContinuousAutoFocus helps improve scan times
+
     NSError *error = nil;
     if ([newCaptureDevice lockForConfiguration:&error]) {
         if ([newCaptureDevice isFocusModeSupported:AVCaptureFocusModeContinuousAutoFocus]) {
             newCaptureDevice.focusMode = AVCaptureFocusModeContinuousAutoFocus;
         }
+        if ([newCaptureDevice isAutoFocusRangeRestrictionSupported]) {
+            newCaptureDevice.autoFocusRangeRestriction = AVCaptureAutoFocusRangeRestrictionNear;
+        }
         [newCaptureDevice unlockForConfiguration];
     } else {
         NSLog(@"Failed to acquire lock for initial focus mode: %@", error);
     }
-    
+
     return newCaptureDevice;
 }
 
